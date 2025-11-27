@@ -1,0 +1,311 @@
+{
+  "name": "ecommerce-order-notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "order-notification",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -656,
+        80
+      ],
+      "id": "60e15f5e-a644-46ed-a52a-adbb1b5d6347",
+      "name": "Webhook",
+      "webhookId": "order-notification-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize order data from webhook\nconst body = $json.body ?? $json;\n\n// Format date to readable format\nconst formatDate = (dateString) => {\n  const date = new Date(dateString || new Date());\n  const options = { \n    year: 'numeric', \n    month: 'short', \n    day: 'numeric', \n    hour: '2-digit', \n    minute: '2-digit',\n    hour12: true\n  };\n  return date.toLocaleDateString('en-US', options);\n};\n\nconst rawDate = body.date_created || body.created_at || new Date().toISOString();\n\nconst order = {\n  orderId: body.id || body.order_id || null,\n  customerName: body.customer?.name || body.customer_name || \"Unknown\",\n  customerEmail: body.customer?.email || body.customer_email || null,\n  orderTotal: body.total || body.order_total || 0,\n  orderStatus: body.status || body.order_status || \"pending\",\n  items: body.items || body.line_items || [],\n  orderDate: formatDate(rawDate),\n  orderDateISO: rawDate, // Keep ISO format for Google Sheets\n  shippingAddress: body.shipping?.address || body.shipping_address || null\n};\n\n// Validate required fields\nif (!order.orderId || !order.customerEmail) {\n  return [{ json: { _error: true, status: 400, message: \"Missing required order data\" } }];\n}\n\nreturn [{ json: order }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        80
+      ],
+      "id": "b17c0810-b437-49ea-82c8-176bd7e3e96b",
+      "name": "Normalize Order Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "aef763a3-8200-4f19-8119-f28ca0913827",
+              "leftValue": "={{$json._error ?? false}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        80
+      ],
+      "id": "724ae3d9-9dce-4023-8cae-5f98d556aee0",
+      "name": "Check Error"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Orders",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "orderid": "={{$('Check Error').item.json.orderId}}",
+            "customeremail": "={{$('Check Error').item.json.customerEmail}}",
+            "ordertotal": "={{$('Check Error').item.json.orderTotal}}",
+            "orderstatus": "={{$('Check Error').item.json.orderStatus}}",
+            "timestamp": "={{$now.toISO()}}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "orderid",
+              "displayName": "orderid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "customeremail",
+              "displayName": "customeremail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ordertotal",
+              "displayName": "ordertotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "orderstatus",
+              "displayName": "orderstatus",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        176
+      ],
+      "id": "1c7cdb09-5e35-4bc6-be61-c86657abce65",
+      "name": "Log to Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: \"Order notification sent\", orderId: $json.orderId } }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        176
+      ],
+      "id": "659a61fb-03dd-4e1a-8b2e-9d388edc506a",
+      "name": "Respond Success"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: $json.message || \"Invalid request\" } }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        16,
+        -16
+      ],
+      "id": "631768a1-7682-4fe8-bb88-604e6e57f66d",
+      "name": "Respond Error"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$json.customerEmail}}",
+        "subject": "=Order Confirmation #{{$json.orderId}}",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }\n    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }\n    .header { background-color: #4CAF50; color: white; padding: 30px 20px; text-align: center; }\n    .header h1 { margin: 0; font-size: 24px; }\n    .content { padding: 30px 20px; background-color: #f9f9f9; }\n    .order-details { background-color: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }\n    .order-details h2 { margin-top: 0; color: #4CAF50; font-size: 20px; }\n    .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; }\n    .detail-row:last-child { border-bottom: none; }\n    .detail-label { font-weight: bold; color: #666; }\n    .detail-value { color: #333; font-size: 16px; }\n    .items-section { margin-top: 20px; padding-top: 20px; border-top: 2px solid #eee; }\n    .items-section h3 { color: #4CAF50; margin-bottom: 10px; }\n    .item { padding: 12px; background-color: #f5f5f5; margin: 8px 0; border-radius: 4px; border-left: 3px solid #4CAF50; }\n    .item-name { font-weight: bold; color: #333; }\n    .item-quantity { color: #666; margin-left: 10px; }\n    .message { margin-top: 20px; padding: 15px; background-color: #e8f5e9; border-radius: 4px; color: #2e7d32; }\n    .footer { text-align: center; padding: 20px; color: #999; font-size: 12px; background-color: #f5f5f5; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>Thank You For Your Order!</h1>\n    </div>\n    <div class=\"content\">\n      <div class=\"order-details\">\n        <h2>Order #{{$json.orderId}}</h2>\n        <div class=\"detail-row\">\n          <span class=\"detail-label\">Order Total:</span>\n          <span class=\"detail-value\">${{$json.orderTotal}}</span>\n        </div>\n        <div class=\"detail-row\">\n          <span class=\"detail-label\">Status:</span>\n          <span class=\"detail-value\">{{$json.orderStatus}}</span>\n        </div>\n        <div class=\"detail-row\">\n          <span class=\"detail-label\">Order Date:</span>\n          <span class=\"detail-value\">{{$json.orderDate}}</span>\n        </div>\n      </div>\n      <div class=\"items-section\">\n        <h3>Order Items:</h3>\n        {{$json.itemsHtml}}\n      </div>\n      <div class=\"message\">\n        <p style=\"margin: 0;\"><strong>We'll send you another email when your order ships.</strong></p>\n      </div>\n      <p style=\"margin-top: 20px; text-align: center;\">Thank you for shopping with us!</p>\n    </div>\n    <div class=\"footer\">\n      <p>This email was sent automatically with n8n</p>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        16,
+        176
+      ],
+      "id": "f9e821f5-257b-4d32-8907-aeb30b196d7c",
+      "name": "Send a message",
+      "webhookId": "5220e2bd-dc1a-40c8-bb8a-bc82e47795af",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth",
+          "name": "Gmail Account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Order Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Order Data": {
+      "main": [
+        [
+          {
+            "node": "Check Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "227b3d66-982a-40a1-af6e-4ea8ffe8f121",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7987ae36ac812cb53a8ae6603b276f6ef3f4b4425dff751ad34df1f186ce269c"
+  },
+  "id": "29ptyJ7duG3mlDdg",
+  "tags": []
+}
